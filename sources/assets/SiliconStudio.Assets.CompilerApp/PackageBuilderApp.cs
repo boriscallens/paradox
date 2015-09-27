@@ -22,6 +22,7 @@ using SiliconStudio.Paradox.Assets.SpriteFont;
 using SiliconStudio.Paradox.Graphics;
 using SiliconStudio.Paradox.Rendering.Materials;
 using SiliconStudio.Paradox.Rendering.ProceduralModels;
+using SiliconStudio.Paradox.SpriteStudio.Offline;
 
 namespace SiliconStudio.Assets.CompilerApp
 {
@@ -49,6 +50,7 @@ namespace SiliconStudio.Assets.CompilerApp
             RuntimeHelpers.RunModuleConstructor(typeof(MaterialKeys).Module.ModuleHandle);
             RuntimeHelpers.RunModuleConstructor(typeof(SpriteFontAsset).Module.ModuleHandle);
             RuntimeHelpers.RunModuleConstructor(typeof(ModelAsset).Module.ModuleHandle);
+            RuntimeHelpers.RunModuleConstructor(typeof(SpriteStudioAnimationAsset).Module.ModuleHandle);
             //var project = new Package();
             //project.Save("test.pdxpkg");
 
@@ -81,6 +83,7 @@ namespace SiliconStudio.Assets.CompilerApp
                 { "v|verbose", "Show more verbose progress logs", v => options.Verbose = v != null },
                 { "d|debug", "Show debug logs (imply verbose)", v => options.Debug = v != null },
                 { "log", "Enable file logging", v => options.EnableFileLogging = v != null },
+                { "disable-auto-compile", "Disable auto-compile of projects", v => options.DisableAutoCompileProjects = v != null},
                 { "p|profile=", "Profile name", v => options.BuildProfile = v },
                 { "project-configuration=", "Project configuration", v => options.ProjectConfiguration = v },
                 { "platform=", "Platform name", v => options.Platform = (PlatformType)Enum.Parse(typeof(PlatformType), v) },

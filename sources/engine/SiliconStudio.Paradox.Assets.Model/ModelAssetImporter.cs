@@ -106,7 +106,6 @@ namespace SiliconStudio.Paradox.Assets.Model
             childEntity.Add(ModelNodeLinkComponent.Key, new ModelNodeLinkComponent
             {
                 NodeName = nodeName,
-                Target = rootEntityAsset.Get(ModelComponent.Key),
             });
 
             // Add this asset to the list
@@ -149,6 +148,12 @@ namespace SiliconStudio.Paradox.Assets.Model
                     var foundMaterial = loadedMaterials.FirstOrDefault(x => x.Location == new UFile(material.Key, null));
                     if (foundMaterial != null)
                         asset.Materials.Add(new ModelMaterial { Name = material.Key, MaterialInstance = new MaterialInstance() { Material = AttachedReferenceManager.CreateSerializableVersion<Material>(foundMaterial.Id, foundMaterial.Location) } });
+                }
+                //handle the case where during import we imported no materials at all
+                //todo Instead of null material add a default paradox material
+                if (entityInfo.Materials.Count == 0)
+                {
+                    asset.Materials.Add(new ModelMaterial { Name = "Material" , MaterialInstance = new MaterialInstance() });
                 }
             }
 

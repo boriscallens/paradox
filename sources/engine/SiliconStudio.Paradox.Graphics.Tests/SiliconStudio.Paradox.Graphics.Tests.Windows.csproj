@@ -48,7 +48,7 @@
     <IntermediateOutputPath>obj\Windows\Release\</IntermediateOutputPath>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
-    <PlatformTarget>x86</PlatformTarget>
+    <PlatformTarget>AnyCPU</PlatformTarget>
   </PropertyGroup>
   <PropertyGroup>
     <StartupObject>SiliconStudio.Paradox.Graphics.Tests.TestSpriteBatch3D</StartupObject>
@@ -165,12 +165,6 @@
       <DesignTime>True</DesignTime>
       <DesignTimeSharedInput>True</DesignTimeSharedInput>
       <DependentUpon>MultipleRenderTargetsEffectShader.pdxsl</DependentUpon>
-    </Compile>
-    <Compile Include="Assets\SpriteEffectWithGamma.cs">
-      <DependentUpon>SpriteEffectWithGamma.pdxsl</DependentUpon>
-      <AutoGen>True</AutoGen>
-      <DesignTimeSharedInput>True</DesignTimeSharedInput>
-      <DesignTime>True</DesignTime>
     </Compile>
     <Compile Include="Assets\ComputeShaderTest.cs">
       <AutoGen>True</AutoGen>
@@ -299,10 +293,6 @@
     <None Include="Assets\MultipleRenderTargetsEffectShader.pdxsl">
       <Generator>ParadoxShaderKeyGenerator</Generator>
       <LastGenOutput>MultipleRenderTargetsEffectShader.cs</LastGenOutput>
-    </None>
-    <None Include="Assets\SpriteEffectWithGamma.pdxsl">
-      <Generator>ParadoxShaderKeyGenerator</Generator>
-      <LastGenOutput>SpriteEffectWithGamma.cs</LastGenOutput>
     </None>
     <None Include="Assets\ComputeShaderTest.pdxsl">
       <Generator>ParadoxShaderKeyGenerator</Generator>

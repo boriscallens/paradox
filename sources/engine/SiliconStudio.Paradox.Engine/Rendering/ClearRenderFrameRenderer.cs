@@ -22,10 +22,11 @@ namespace SiliconStudio.Paradox.Rendering
         public ClearRenderFrameRenderer()
         {
             Name = "Clear RenderFrame";
-            ClearFlags = ClearRenderFrameFlags.Color;
+            ClearFlags = ClearRenderFrameFlags.ColorAndDepth;
             Color = Core.Mathematics.Color.CornflowerBlue;
             Depth = 1.0f;
             Stencil = 0;
+            ColorSpace = ColorSpace.Gamma;
         }
 
         /// <summary>
@@ -34,7 +35,7 @@ namespace SiliconStudio.Paradox.Rendering
         /// <value>The clear flags.</value>
         /// <userdoc>Flag indicating which buffers to clear.</userdoc>
         [DataMember(10)]
-        [DefaultValue(ClearRenderFrameFlags.Color)]
+        [DefaultValue(ClearRenderFrameFlags.ColorAndDepth)]
         [Display("Clear Flags")]
         public ClearRenderFrameFlags ClearFlags { get; set; }
 
@@ -46,6 +47,16 @@ namespace SiliconStudio.Paradox.Rendering
         [DataMember(20)]
         [Display("Color")]
         public Color4 Color { get; set; }
+
+        /// <summary>
+        /// Gets or sets the colorspace of the <see cref="Color"/> value. See remarks.
+        /// </summary>
+        /// <value>The clear color.</value>
+        /// <userdoc>The colorspace of the color value. By default, the color is in gamma space and transformed automatically in linear space if the render target is either SRgb or HDR.</userdoc>
+        [DataMember(25)]
+        [DefaultValue(ColorSpace.Gamma)]
+        [Display("Color Space")]
+        public ColorSpace ColorSpace { get; set; }
 
         /// <summary>
         /// Gets or sets the depth value used to clear the depth stencil buffer.
@@ -76,19 +87,22 @@ namespace SiliconStudio.Paradox.Rendering
             var graphicsDevice = context.GraphicsDevice;
 
             // clear the targets
-            if (output.DepthStencil != null)
+            if (output.DepthStencil != null && (ClearFlags == ClearRenderFrameFlags.ColorAndDepth || ClearFlags == ClearRenderFrameFlags.DepthOnly))
             {
                 const DepthStencilClearOptions ClearOptions = DepthStencilClearOptions.DepthBuffer | DepthStencilClearOptions.Stencil;
                 graphicsDevice.Clear(output.DepthStencil, ClearOptions, Depth, Stencil);
             }
 
-            if (ClearFlags == ClearRenderFrameFlags.Color)
+            if (ClearFlags == ClearRenderFrameFlags.ColorAndDepth || ClearFlags == ClearRenderFrameFlags.ColorOnly)
             {
                 foreach (var renderTarget in output.RenderTargets)
                 {
                     if (renderTarget != null)
                     {
-                        graphicsDevice.Clear(renderTarget, Color);
+                        // If color is in GammeSpace and rendertarget is either SRgb or HDR, use a linear value to clear the buffer.
+                        // TODO: We will need to move this color transform code to a shareable component
+                        var color = Color.ToColorSpace(ColorSpace, (renderTarget.Format.IsSRgb() || renderTarget.Format.IsHDR()) ? ColorSpace.Linear : graphicsDevice.ColorSpace);
+                        graphicsDevice.Clear(renderTarget, color);
                     }
                 }
             }

@@ -5,13 +5,16 @@ using SiliconStudio.Core.Mathematics;
 using SiliconStudio.Paradox.Graphics;
 using System.Collections.Generic;
 using System.Linq;
-
+using SiliconStudio.Paradox.Extensions;
 using SiliconStudio.Paradox.Graphics.GeometricPrimitives;
+using SiliconStudio.Paradox.Rendering;
 
 namespace SiliconStudio.Paradox.Physics
 {
     public class ConvexHullColliderShape : ColliderShape
     {
+        private MeshDraw cachedDebugPrimitive;
+
         private readonly IReadOnlyList<Vector3> pointsList;
         private readonly IReadOnlyCollection<uint> indicesList; 
 
@@ -20,18 +23,21 @@ namespace SiliconStudio.Paradox.Physics
             Type = ColliderShapeTypes.ConvexHull;
             Is2D = false;
 
-            InternalShape = new BulletSharp.ConvexHullShape(points);
+            InternalShape = new BulletSharp.ConvexHullShape(points)
+            {
+                LocalScaling = scaling
+            };
 
             DebugPrimitiveMatrix = Matrix.Scaling(new Vector3(1, 1, 1) * 1.01f);
-
-            Scaling = scaling;
 
             pointsList = points;
             indicesList = indices;
         }
 
-        public override GeometricPrimitive CreateDebugPrimitive(GraphicsDevice device)
+        public override MeshDraw CreateDebugPrimitive(GraphicsDevice device)
         {
+            if (cachedDebugPrimitive != null) return cachedDebugPrimitive;
+
             var verts = new VertexPositionNormalTexture[pointsList.Count];
             for (var i = 0; i < pointsList.Count; i++)
             {
@@ -59,7 +65,9 @@ namespace SiliconStudio.Paradox.Physics
 
             var meshData = new GeometricMeshData<VertexPositionNormalTexture>(verts, intIndices, false);
 
-            return new GeometricPrimitive(device, meshData);
+            cachedDebugPrimitive = new GeometricPrimitive(device, meshData).ToMeshDraw();
+
+            return cachedDebugPrimitive;
         }
     }
 }

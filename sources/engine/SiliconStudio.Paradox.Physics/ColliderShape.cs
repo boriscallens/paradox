@@ -5,7 +5,6 @@ using System;
 using SiliconStudio.Core.Mathematics;
 using SiliconStudio.Paradox.Rendering;
 using SiliconStudio.Paradox.Graphics;
-using SiliconStudio.Paradox.Graphics.GeometricPrimitives;
 
 namespace SiliconStudio.Paradox.Physics
 {
@@ -47,8 +46,8 @@ namespace SiliconStudio.Paradox.Physics
             var inverseRotation = LocalRotation;
             inverseRotation.Invert();
 
-            PositiveCenterMatrix = Matrix.RotationQuaternion(LocalRotation) * Matrix.Translation(LocalOffset);
-            NegativeCenterMatrix = Matrix.RotationQuaternion(inverseRotation) * Matrix.Translation(-LocalOffset);
+            PositiveCenterMatrix = Matrix.RotationQuaternion(LocalRotation)*Matrix.Translation(LocalOffset * Scaling);// * Matrix.Scaling(Scaling);
+            NegativeCenterMatrix = Matrix.RotationQuaternion(inverseRotation)*Matrix.Translation(-LocalOffset * Scaling);// * Matrix.Scaling(Scaling);
 
             //if we are part of a compund we should update the transformation properly
             if (Parent == null) return;
@@ -95,13 +94,7 @@ namespace SiliconStudio.Paradox.Physics
             set
             {
                 var newScaling = value;
-                
-                if (Is2D) newScaling.Z = 1.0f;
-
-                DebugPrimitiveMatrix *= Matrix.Scaling(newScaling);
-
                 if (Is2D) newScaling.Z = 0.0f;
-
                 InternalShape.LocalScaling = newScaling;
             }
         }
@@ -120,15 +113,15 @@ namespace SiliconStudio.Paradox.Physics
 
         internal CompoundColliderShape Parent;
 
-        public virtual GeometricPrimitive CreateDebugPrimitive(GraphicsDevice device)
+        public virtual MeshDraw CreateDebugPrimitive(GraphicsDevice device)
         {
             return null;
         }
 
-        public Model DebugModel;
-
         public Matrix DebugPrimitiveMatrix;
 
         internal bool NeedsCustomCollisionCallback;
+
+        internal bool IsPartOfAsset = false;
     }
 }

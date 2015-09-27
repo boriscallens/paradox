@@ -7,16 +7,12 @@ using System.Reflection;
 using SharpYaml.Serialization;
 using SiliconStudio.Assets.Analysis;
 using SiliconStudio.Assets.Diff;
-
 using SiliconStudio.Assets.Compiler;
-using SiliconStudio.Assets.Serializers;
 using SiliconStudio.Core;
 using SiliconStudio.Core.Diagnostics;
 using SiliconStudio.Core.Reflection;
 using SiliconStudio.Core.VisualStudio;
 using SiliconStudio.Core.Yaml;
-
-using IObjectFactory = SiliconStudio.Core.Reflection.IObjectFactory;
 
 namespace SiliconStudio.Assets
 {
@@ -27,22 +23,26 @@ namespace SiliconStudio.Assets
     public static class AssetRegistry
     {
         private static readonly Logger Log = GlobalLogger.GetLogger("Assets.Registry");
+
         private static readonly Dictionary<Type, string> RegisteredDefaultAssetExtension = new Dictionary<Type, string>();
         private static readonly Dictionary<Type, bool> RegisteredDynamicThumbnails = new Dictionary<Type, bool>();
         private static readonly HashSet<Type> AssetTypes = new HashSet<Type>();
         private static readonly HashSet<Type> RegisteredPackageSessionAnalysisTypes = new HashSet<Type>();
-        private static readonly Dictionary<Guid, IAssetImporter> RegisteredImportersInternal = new Dictionary<Guid, IAssetImporter>();
+        private static readonly List<IAssetImporter> RegisteredImportersInternal = new List<IAssetImporter>();
         private static readonly Dictionary<Type, Tuple<int, int>> RegisteredFormatVersions = new Dictionary<Type, Tuple<int, int>>();
         private static readonly HashSet<Type> RegisteredInternalAssetTypes = new HashSet<Type>();
+        private static readonly HashSet<Type> AlwaysMarkAsRootAssetTypes = new HashSet<Type>();
         private static readonly Dictionary<Type, AssetUpgraderCollection> RegisteredAssetUpgraders = new Dictionary<Type, AssetUpgraderCollection>();
-        private static readonly Dictionary<string, List<IAssetImporter>> RegisterImportExtensions = new Dictionary<string, List<IAssetImporter>>(StringComparer.InvariantCultureIgnoreCase);
-        private static readonly HashSet<string> RegisteredAssetFileExtensions = new HashSet<string>(StringComparer.InvariantCultureIgnoreCase);
+        private static readonly Dictionary<string, Type> RegisteredAssetFileExtensions = new Dictionary<string, Type>(StringComparer.InvariantCultureIgnoreCase);
         private static readonly Dictionary<string, PackageUpgrader> RegisteredPackageUpgraders = new Dictionary<string, PackageUpgrader>();
         private static readonly HashSet<Assembly> RegisteredAssemblies = new HashSet<Assembly>();
         private static readonly HashSet<IYamlSerializableFactory> RegisteredSerializerFactories = new HashSet<IYamlSerializableFactory>();
         private static readonly List<IDataCustomVisitor> RegisteredDataVisitNodes = new List<IDataCustomVisitor>();
         private static readonly List<IDataCustomVisitor> RegisteredDataVisitNodeBuilders = new List<IDataCustomVisitor>();
         private static Func<object, string, string> stringExpander;
+
+        // Global lock used to secure the registry with threads
+        private static readonly object RegistryLock = new object();
 
         /// <summary>
         /// Gets the list of assemblies currently registered.
@@ -51,7 +51,7 @@ namespace SiliconStudio.Assets
         {
             get
             {
-                lock (RegisteredAssemblies)
+                lock (RegistryLock)
                 {
                     return RegisteredAssemblies.ToList();
                 }
@@ -72,9 +72,9 @@ namespace SiliconStudio.Assets
         {
             get
             {
-                lock (RegisteredImportersInternal)
+                lock (RegistryLock)
                 {
-                    return RegisteredImportersInternal.Values;
+                    return RegisteredImportersInternal;
                 }
             }
         }
@@ -121,35 +121,69 @@ namespace SiliconStudio.Assets
         /// <returns>System.String[][].</returns>
         public static string[] GetAssetFileExtensions()
         {
-            lock (RegisteredAssetFileExtensions)
+            lock (RegistryLock)
             {
-                return RegisteredAssetFileExtensions.ToArray();
+                return RegisteredAssetFileExtensions.Keys.ToArray();
             }
         }
 
         /// <summary>
-        /// Determines whether the extension is an asset file type.
+        /// Determines whether the file is an asset file type.
         /// </summary>
-        /// <param name="extension">The extension.</param>
-        /// <returns><c>true</c> if [is asset file extension] [the specified extension]; otherwise, <c>false</c>.</returns>
+        /// <param name="extension">The file.</param>
+        /// <returns><c>true</c> if [is asset file file] [the specified file]; otherwise, <c>false</c>.</returns>
         public static bool IsAssetFileExtension(string extension)
+        {
+            if (extension == null) return false;
+            lock (RegistryLock)
+            {
+                return RegisteredAssetFileExtensions.ContainsKey(extension);
+            }
+        }
+
+        /// <summary>
+        /// Gets the asset type from the extension. If no asset type is found, return null.
+        /// </summary>
+        /// <param name="extension">The extension of the asset file.</param>
+        /// <returns>Type of the associated asset or null if not found.</returns>
+        public static Type GetAssetTypeFromFileExtension(string extension)
+        {
+            if (extension == null) throw new ArgumentNullException(nameof(extension));
+            lock (RegistryLock)
+            {
+                Type result;
+                RegisteredAssetFileExtensions.TryGetValue(extension, out result);
+                return result;
+            }
+        }
+
+        public static bool IsProjectSourceCodeAssetFileExtension(string extension)
         {
             if (extension == null) return false;
             lock (RegisteredAssetFileExtensions)
             {
-                return RegisteredAssetFileExtensions.Contains(extension);
+                var valid = RegisteredAssetFileExtensions.ContainsKey(extension);
+                if (valid)
+                {
+                    var type = RegisteredDefaultAssetExtension.Where(x => x.Value == extension).Select(x => x.Key).FirstOrDefault();
+                    if (type != null)
+                    {
+                        return typeof(ProjectSourceCodeAsset).IsAssignableFrom(type);
+                    }
+                }
+                return false;
             }
         }
 
         /// <summary>
-        /// Gets the default extension associated with an asset.
+        /// Gets the default file associated with an asset.
         /// </summary>
         /// <param name="assetType">The type.</param>
         /// <returns>System.String.</returns>
         public static string GetDefaultExtension(Type assetType)
         {
             IsAssetType(assetType, true);
-            lock (RegisteredAssetFileExtensions)
+            lock (RegistryLock)
             {
                 string extension;
                 RegisteredDefaultAssetExtension.TryGetValue(assetType, out extension);
@@ -165,7 +199,7 @@ namespace SiliconStudio.Assets
         public static int GetCurrentFormatVersion(Type assetType)
         {
             IsAssetType(assetType, true);
-            lock (RegisteredFormatVersions)
+            lock (RegistryLock)
             {
                 Tuple<int, int> version;
                 RegisteredFormatVersions.TryGetValue(assetType, out version);
@@ -181,7 +215,7 @@ namespace SiliconStudio.Assets
         public static int GetMinimalFormatVersion(Type assetType)
         {
             IsAssetType(assetType, true);
-            lock (RegisteredFormatVersions)
+            lock (RegistryLock)
             {
                 Tuple<int, int> version;
                 RegisteredFormatVersions.TryGetValue(assetType, out version);
@@ -197,7 +231,7 @@ namespace SiliconStudio.Assets
         public static AssetUpgraderCollection GetAssetUpgraders(Type assetType)
         {
             IsAssetType(assetType, true);
-            lock (RegisteredAssetUpgraders)
+            lock (RegistryLock)
             {
                 AssetUpgraderCollection upgraders;
                 RegisteredAssetUpgraders.TryGetValue(assetType, out upgraders);
@@ -207,7 +241,7 @@ namespace SiliconStudio.Assets
 
         public static PackageUpgrader GetPackageUpgrader(string packageName)
         {
-            lock (RegisteredPackageUpgraders)
+            lock (RegistryLock)
             {
                 PackageUpgrader upgrader;
                 RegisteredPackageUpgraders.TryGetValue(packageName, out upgrader);
@@ -216,7 +250,7 @@ namespace SiliconStudio.Assets
         }
 
         /// <summary>
-        /// Gets the default extension associated with an asset.
+        /// Gets the default file associated with an asset.
         /// </summary>
         /// <typeparam name="T">Type of the asset.</typeparam>
         /// <returns>System.String.</returns>
@@ -227,7 +261,7 @@ namespace SiliconStudio.Assets
 
         public static IEnumerable<Type> GetPackageSessionAnalysisTypes()
         {
-            lock (RegisteredPackageSessionAnalysisTypes)
+            lock (RegistryLock)
             {
                 return RegisteredPackageSessionAnalysisTypes;
             }
@@ -238,9 +272,17 @@ namespace SiliconStudio.Assets
         /// <returns>An array of <see cref="Type"/> elements.</returns>
         public static Type[] GetInstantiableTypes()
         {
-            lock (RegisteredInternalAssetTypes)
+            lock (RegistryLock)
             {
                 return ObjectFactory.FindRegisteredFactories().Where(type => typeof(Asset).IsAssignableFrom(type) && type.IsPublic && !RegisteredInternalAssetTypes.Contains(type)).ToArray();
+            }
+        }
+
+        public static bool IsAssetTypeAlwaysMarkAsRoot(Type type)
+        {
+            lock (AlwaysMarkAsRootAssetTypes)
+            {
+                return AlwaysMarkAsRootAssetTypes.Contains(type);
             }
         }
 
@@ -252,7 +294,7 @@ namespace SiliconStudio.Assets
         public static bool HasDynamicThumbnail(Type assetType)
         {
             IsAssetType(assetType, true);
-            lock (RegisteredDynamicThumbnails)
+            lock (RegistryLock)
             {
                 bool hasThumbnail;
                 RegisteredDynamicThumbnails.TryGetValue(assetType, out hasThumbnail);
@@ -266,47 +308,31 @@ namespace SiliconStudio.Assets
         /// <returns>An array of <see cref="Type"/> elements.</returns>
         public static Type[] GetPublicTypes()
         {
-            lock (AssetTypes)
+            lock (RegistryLock)
             {
                 return AssetTypes.ToArray();
             }
         }
 
         /// <summary>
-        /// Determines whether [is importer supporting extension] [the specified extension].
+        /// Finds the importer associated with an asset by the file of the file to import.
         /// </summary>
-        /// <param name="extension">The extension.</param>
-        /// <returns><c>true</c> if [is importer supporting extension] [the specified extension]; otherwise, <c>false</c>.</returns>
-        /// <exception cref="System.ArgumentNullException">extension</exception>
-        public static bool IsImporterSupportingExtension(string extension)
-        {
-            if (extension == null) throw new ArgumentNullException("extension");
-
-            lock (RegisterImportExtensions)
-            {
-                return RegisterImportExtensions.ContainsKey(extension);
-            }
-        }
-
-        /// <summary>
-        /// Finds the importer associated with an asset by the extension of the file to import.
-        /// </summary>
-        /// <param name="extension">The extension of the file to import.</param>
+        /// <param name="file">The file to import.</param>
         /// <returns>An instance of the importer of null if not found.</returns>
-        public static IEnumerable<IAssetImporter> FindImporterByExtension(string extension)
+        public static IEnumerable<IAssetImporter> FindImporterForFile(string file)
         {
-            if (extension == null) throw new ArgumentNullException("extension");
+            if (file == null) throw new ArgumentNullException("file");
 
-            lock (RegisterImportExtensions)
+            lock (RegistryLock)
             {
-                List<IAssetImporter> importers;
-                if (RegisterImportExtensions.TryGetValue(extension, out importers))
+                foreach (var importer in RegisteredImportersInternal)
                 {
-                    var newImporters = new List<IAssetImporter>(importers);
-                    return newImporters;
+                    if (importer.IsSupportingFile(file))
+                    {
+                        yield return importer;
+                    }
                 }
             }
-            return Enumerable.Empty<IAssetImporter>();
         }
 
         /// <summary>
@@ -316,15 +342,10 @@ namespace SiliconStudio.Assets
         /// <returns>An instance of the importer of null if not found.</returns>
         public static IAssetImporter FindImporterById(Guid importerId)
         {
-            lock (RegisteredImportersInternal)
+            lock (RegistryLock)
             {
-                IAssetImporter importer;
-                if (RegisteredImportersInternal.TryGetValue(importerId, out importer))
-                {
-                    return importer;
-                }
+                return RegisteredImportersInternal.FirstOrDefault(t => t.Id == importerId);
             }
-            return null;
         }
 
         /// <summary>
@@ -337,38 +358,22 @@ namespace SiliconStudio.Assets
             if (importer == null) throw new ArgumentNullException("importer");
 
             // Register this importer
-            lock (RegisteredImportersInternal)
+            lock (RegistryLock)
             {
-                if (RegisteredImportersInternal.ContainsKey(importer.Id))
-                    return;
-                RegisteredImportersInternal[importer.Id] = importer;
-            }
-
-            // Register file extensions to type
-            var extensions = FileUtility.GetFileExtensions(importer.SupportedFileExtensions);
-            lock (RegisterImportExtensions)
-            {
-                foreach (var extension in extensions)
+                var existingImporter = FindImporterById(importer.Id);
+                if (existingImporter != null)
                 {
-                    List<IAssetImporter> importers;
-                    if (!RegisterImportExtensions.TryGetValue(extension, out importers))
-                    {
-                        importers = new List<IAssetImporter>();
-                        RegisterImportExtensions.Add(extension, importers);
-                    }
-                    if (!importers.Contains(importer))
-                    {
-                        importers.Add(importer);
-                        // Always keep the list of importer sotred by their DisplayRank
-                        importers.Sort( (left, right) => -left.DisplayRank.CompareTo(right.DisplayRank));
-                    }
+                    RegisteredImportersInternal.Remove(existingImporter);
                 }
+
+                RegisteredImportersInternal.Add(importer);
+                RegisteredImportersInternal.Sort( (left, right) => left.Order.CompareTo(right.Order));
             }
         }
 
         public static IEnumerable<IDataCustomVisitor> GetDataVisitNodes()
         {
-            lock (RegisteredDataVisitNodes)
+            lock (RegistryLock)
             {
                 return RegisteredDataVisitNodes;
             }
@@ -376,7 +381,7 @@ namespace SiliconStudio.Assets
 
         public static IEnumerable<IDataCustomVisitor> GetDataVisitNodeBuilders()
         {
-            lock (RegisteredDataVisitNodeBuilders)
+            lock (RegistryLock)
             {
                 return RegisteredDataVisitNodeBuilders;
             }
@@ -390,7 +395,7 @@ namespace SiliconStudio.Assets
         private static void RegisterDynamicThumbnail(Type assetType, bool isDynamicThumbnail)
         {
             IsAssetType(assetType, true);
-            lock (RegisteredDynamicThumbnails)
+            lock (RegistryLock)
             {
                 RegisteredDynamicThumbnails[assetType] = isDynamicThumbnail;
             }
@@ -415,207 +420,292 @@ namespace SiliconStudio.Assets
         {
             if (assembly == null) throw new ArgumentNullException("assembly");
 
-            lock (RegisteredAssemblies)
+            lock (RegistryLock)
             {
                 if (RegisteredAssemblies.Contains(assembly))
                 {
                     return;
                 }
                 RegisteredAssemblies.Add(assembly);
-            }
 
-            // Process Asset types.
-            foreach (var type in assembly.GetTypes())
-            {
-                // Register serializer factories
-                if (type.GetCustomAttribute<YamlSerializerFactoryAttribute>() != null)
+                // Process Asset types.
+                foreach (var type in assembly.GetTypes())
                 {
-                    if (typeof(IYamlSerializableFactory).IsAssignableFrom(type))
+                    // Register serializer factories
+                    if (type.GetCustomAttribute<YamlSerializerFactoryAttribute>() != null)
                     {
-                        try
+                        if (typeof(IYamlSerializableFactory).IsAssignableFrom(type))
                         {
-                            var yamlFactory = (IYamlSerializableFactory)Activator.CreateInstance(type);
-                            lock (RegisteredSerializerFactories)
+                            try
                             {
+                                var yamlFactory = (IYamlSerializableFactory)Activator.CreateInstance(type);
                                 RegisteredSerializerFactories.Add(yamlFactory);
-                            }
-                            // TODO: Handle IDataCustomVisitor on its own instead of relying on the coupling with IYamlSerializableFactory
-                            var dataCustomVisitor = yamlFactory as IDataCustomVisitor;
-                            if (dataCustomVisitor != null)
-                            {
-                                lock (RegisteredDataVisitNodes)
+
+                                // TODO: Handle IDataCustomVisitor on its own instead of relying on the coupling with IYamlSerializableFactory
+                                var dataCustomVisitor = yamlFactory as IDataCustomVisitor;
+                                if (dataCustomVisitor != null)
                                 {
                                     RegisteredDataVisitNodes.Add(dataCustomVisitor);
                                 }
                             }
-                        }
-                        catch (Exception ex)
-                        {
-                            Log.Error("Unable to instantiate serializer factory [{0}]", ex, type);
+                            catch (Exception ex)
+                            {
+                                Log.Error("Unable to instantiate serializer factory [{0}]", ex, type);
+                            }
                         }
                     }
-                }
 
-                if (type.GetCustomAttribute<DiffNodeBuilderAttribute>() != null)
-                {
-                    if (typeof(IDataCustomVisitor).IsAssignableFrom(type))
+                    if (type.GetCustomAttribute<DiffNodeBuilderAttribute>() != null)
                     {
-                        try
+                        if (typeof(IDataCustomVisitor).IsAssignableFrom(type))
                         {
-                            var dataCustomVisitor = (IDataCustomVisitor)Activator.CreateInstance(type);
-                            lock (RegisteredDataVisitNodeBuilders)
+                            try
                             {
+                                var dataCustomVisitor = (IDataCustomVisitor)Activator.CreateInstance(type);
                                 RegisteredDataVisitNodeBuilders.Add(dataCustomVisitor);
                             }
-                        }
-                        catch (Exception ex)
-                        {
-                            Log.Error("Unable to instantiate diff converter [{0}]", ex, type);
-                        }
-                    }
-                }
-
-                // Asset importer
-                if (typeof(IAssetImporter).IsAssignableFrom(type) && type.GetConstructor(new Type[0]) != null)
-                {
-                    try
-                    {
-                        var importerInstance = Activator.CreateInstance(type) as IAssetImporter;
-
-                        // Register the importer instance
-                        RegisterImporter(importerInstance);
-                    }
-                    catch (Exception ex)
-                    {
-                        Log.Error("Unable to instantiate importer [{0}]", ex, type.Name);
-                    }
-                }
-
-                if (typeof(PackageSessionAnalysisBase).IsAssignableFrom(type) && type.GetConstructor(new Type[0]) != null )
-                {
-                    RegisteredPackageSessionAnalysisTypes.Add(type);
-                }
-
-                {
-                    var packageUpgraderAttribute = type.GetCustomAttribute<PackageUpgraderAttribute>();
-                    if (packageUpgraderAttribute != null)
-                    {
-                        try
-                        {
-                            var packageUpgrader = (PackageUpgrader)Activator.CreateInstance(type);
-                            packageUpgrader.Attribute = packageUpgraderAttribute;
-                            RegisteredPackageUpgraders[packageUpgraderAttribute.PackageName] = packageUpgrader;
-                        }
-                        catch (Exception ex)
-                        {
-                            Log.Error("Unable to instantiate package upgrader [{0}]", ex, type.Name);
-                        }
-                    }
-                }
-
-                // Only process Asset types
-                var assetType = type;
-                if (!typeof(Asset).IsAssignableFrom(assetType) || !assetType.IsClass)
-                {
-                    continue;
-                }
-
-                // Store in a list all asset types loaded
-                if (assetType.IsPublic && !assetType.IsAbstract)
-                {
-                    AssetTypes.Add(assetType);
-                }
-
-                var isSourceCodeAsset = typeof(SourceCodeAsset).IsAssignableFrom(assetType);
-
-                // Asset FileExtensions
-                var assetDescriptionAttribute = assetType.GetCustomAttribute<AssetDescriptionAttribute>();
-                if (assetDescriptionAttribute != null)
-                {
-                    if (assetDescriptionAttribute.FileExtensions != null)
-                    {
-                        var extensions = FileUtility.GetFileExtensions(assetDescriptionAttribute.FileExtensions);
-                        RegisteredDefaultAssetExtension[assetType] = extensions.FirstOrDefault();
-                        foreach (var extension in extensions)
-                        {
-                            RegisteredAssetFileExtensions.Add(extension);
-
-                            // If the asset is a pure sourcecode asset, then register the serializer
-                            if (isSourceCodeAsset)
+                            catch (Exception ex)
                             {
-                                SourceCodeAssetSerializer.RegisterExtension(assetType, extension);
+                                Log.Error("Unable to instantiate diff converter [{0}]", ex, type);
                             }
                         }
                     }
-                    if (!assetDescriptionAttribute.AllowUserCreation)
+
+                    // Asset importer
+                    if (typeof(IAssetImporter).IsAssignableFrom(type) && type.GetConstructor(new Type[0]) != null)
                     {
-                        RegisteredInternalAssetTypes.Add(assetType);
+                        try
+                        {
+                            var importerInstance = Activator.CreateInstance(type) as IAssetImporter;
+
+                            // Register the importer instance
+                            RegisterImporter(importerInstance);
+                        }
+                        catch (Exception ex)
+                        {
+                            Log.Error("Unable to instantiate importer [{0}]", ex, type.Name);
+                        }
                     }
-                }
 
-                // Asset format version
-                var assetFormatVersion = assetType.GetCustomAttribute<AssetFormatVersionAttribute>();
-                int formatVersion = assetFormatVersion != null ? assetFormatVersion.Version : 0;
-                int minVersion = assetFormatVersion != null ? assetFormatVersion.MinUpgradableVersion : 0;
-                RegisteredFormatVersions.Add(assetType, Tuple.Create(minVersion, formatVersion));
-
-                // Asset upgraders
-                var assetUpgraders = assetType.GetCustomAttributes<AssetUpgraderAttribute>();
-                AssetUpgraderCollection upgraderCollection = null;
-                foreach (var upgrader in assetUpgraders)
-                {
-                    if (upgraderCollection == null)
-                        upgraderCollection = new AssetUpgraderCollection(assetType, formatVersion);
-
-                    upgraderCollection.RegisterUpgrader(upgrader.AssetUpgraderType, upgrader.StartMinVersion, upgrader.StartMaxVersion, upgrader.TargetVersion);
-                }
-                if (upgraderCollection != null)
-                {
-                    upgraderCollection.Validate(minVersion);
-                    RegisteredAssetUpgraders.Add(assetType, upgraderCollection);
-                }
-
-                // Asset factory
-                var assetFactory = assetType.GetCustomAttribute<ObjectFactoryAttribute>();
-                if (assetFactory != null)
-                {
-                    try
+                    if (typeof(PackageSessionAnalysisBase).IsAssignableFrom(type) && type.GetConstructor(new Type[0]) != null)
                     {
-                        ObjectFactory.RegisterFactory(assetType);
+                        RegisteredPackageSessionAnalysisTypes.Add(type);
                     }
-                    catch (Exception ex)
-                    {
-                        Log.Error("Unable to instantiate factory [{0}] for asset [{1}]", ex, assetFactory.FactoryTypeName, assetType);
-                    }
-                }
-                else
-                {
-                    var assetConstructor = assetType.GetConstructor(Type.EmptyTypes);
-                    if (assetConstructor != null)
-                    {
-                        // Register the asset even if it has no factory (default using empty constructor)
-                        ObjectFactory.RegisterFactory(assetType, null);
-                    }
-                }
 
-                // Asset description
-                var thumbnailCompilerAttribute = assetType.GetCustomAttribute<ThumbnailCompilerAttribute>();
-                if (thumbnailCompilerAttribute != null)
-                {
-                    RegisterDynamicThumbnail(assetType, thumbnailCompilerAttribute.DynamicThumbnails);
+                    {
+                        var packageUpgraderAttribute = type.GetCustomAttribute<PackageUpgraderAttribute>();
+                        if (packageUpgraderAttribute != null)
+                        {
+                            try
+                            {
+                                var packageUpgrader = (PackageUpgrader)Activator.CreateInstance(type);
+                                packageUpgrader.Attribute = packageUpgraderAttribute;
+                                RegisteredPackageUpgraders[packageUpgraderAttribute.PackageName] = packageUpgrader;
+                            }
+                            catch (Exception ex)
+                            {
+                                Log.Error("Unable to instantiate package upgrader [{0}]", ex, type.Name);
+                            }
+                        }
+                    }
+
+                    // Only process Asset types
+                    var assetType = type;
+                    if (!typeof(Asset).IsAssignableFrom(assetType) || !assetType.IsClass)
+                    {
+                        continue;
+                    }
+
+                    // Store in a list all asset types loaded
+                    if (assetType.IsPublic && !assetType.IsAbstract)
+                    {
+                        AssetTypes.Add(assetType);
+                    }
+
+                    // Asset FileExtensions
+                    var assetDescriptionAttribute = assetType.GetCustomAttribute<AssetDescriptionAttribute>();
+                    if (assetDescriptionAttribute != null)
+                    {
+                        if (assetDescriptionAttribute.FileExtensions != null)
+                        {
+                            var extensions = FileUtility.GetFileExtensions(assetDescriptionAttribute.FileExtensions);
+                            RegisteredDefaultAssetExtension[assetType] = extensions.FirstOrDefault();
+                            foreach (var extension in extensions)
+                            {
+                                if (!RegisteredAssetFileExtensions.ContainsKey(extension))
+                                {
+                                    RegisteredAssetFileExtensions.Add(extension, assetType);
+                                }
+                            }
+                        }
+                        if (!assetDescriptionAttribute.AllowUserCreation)
+                        {
+                            RegisteredInternalAssetTypes.Add(assetType);
+                    }
+
+                    if (assetDescriptionAttribute.AlwaysMarkAsRoot)
+                    {
+                        lock (AlwaysMarkAsRootAssetTypes)
+                        {
+                            AlwaysMarkAsRootAssetTypes.Add(assetType);
+                        }
+                        }
+                    }
+
+                    // Asset format version
+                    var assetFormatVersion = assetType.GetCustomAttribute<AssetFormatVersionAttribute>();
+                    int formatVersion = assetFormatVersion != null ? assetFormatVersion.Version : 0;
+                    int minVersion = assetFormatVersion != null ? assetFormatVersion.MinUpgradableVersion : 0;
+                    RegisteredFormatVersions.Add(assetType, Tuple.Create(minVersion, formatVersion));
+
+                    // Asset upgraders
+                    var assetUpgraders = assetType.GetCustomAttributes<AssetUpgraderAttribute>();
+                    AssetUpgraderCollection upgraderCollection = null;
+                    foreach (var upgrader in assetUpgraders)
+                    {
+                        if (upgraderCollection == null)
+                            upgraderCollection = new AssetUpgraderCollection(assetType, formatVersion);
+
+                        upgraderCollection.RegisterUpgrader(upgrader.AssetUpgraderType, upgrader.StartMinVersion, upgrader.StartMaxVersion, upgrader.TargetVersion);
+                    }
+                    if (upgraderCollection != null)
+                    {
+                        upgraderCollection.Validate(minVersion);
+                        RegisteredAssetUpgraders.Add(assetType, upgraderCollection);
+                    }
+
+                    // Asset factory
+                    var assetFactory = assetType.GetCustomAttribute<ObjectFactoryAttribute>();
+                    if (assetFactory != null)
+                    {
+                        try
+                        {
+                            ObjectFactory.RegisterFactory(assetType);
+                        }
+                        catch (Exception ex)
+                        {
+                            Log.Error("Unable to instantiate factory [{0}] for asset [{1}]", ex, assetFactory.FactoryTypeName, assetType);
+                        }
+                    }
+                    else
+                    {
+                        var assetConstructor = assetType.GetConstructor(Type.EmptyTypes);
+                        if (assetConstructor != null)
+                        {
+                            // Register the asset even if it has no factory (default using empty constructor)
+                            ObjectFactory.RegisterFactory(assetType, null);
+                        }
+                    }
+
+                    // Asset description
+                    var thumbnailCompilerAttribute = assetType.GetCustomAttribute<ThumbnailCompilerAttribute>();
+                    if (thumbnailCompilerAttribute != null)
+                    {
+                        RegisterDynamicThumbnail(assetType, thumbnailCompilerAttribute.DynamicThumbnails);
+                    }
                 }
             }
         }
 
+        /// <summary>
+        /// Unregisters the specified assembly from the asset registry.
+        /// </summary>
+        /// <param name="assembly">A registered assembly.</param>
+        public static void UnregisterAssembly(Assembly assembly)
+        {
+            if (assembly == null) throw new ArgumentNullException(nameof(assembly));
+
+            lock (RegistryLock)
+            {
+                if (!RegisteredAssemblies.Contains(assembly))
+                {
+                    return;
+                }
+                RegisteredAssemblies.Remove(assembly);
+
+
+                foreach (var typeToRemove in RegisteredDefaultAssetExtension.Keys.ToList().Where(type => type.Assembly == assembly))
+                {
+                    RegisteredDefaultAssetExtension.Remove(typeToRemove);
+                }
+
+                foreach (var typeToRemove in RegisteredDynamicThumbnails.Keys.ToList().Where(type => type.Assembly == assembly))
+                {
+                    RegisteredDynamicThumbnails.Remove(typeToRemove);
+                }
+
+                foreach (var typeToRemove in AssetTypes.ToList().Where(type => type.Assembly == assembly))
+                {
+                    AssetTypes.Remove(typeToRemove);
+                }
+
+                foreach (var typeToRemove in RegisteredPackageSessionAnalysisTypes.ToList().Where(type => type.Assembly == assembly))
+                {
+                    RegisteredPackageSessionAnalysisTypes.Remove(typeToRemove);
+                }
+
+                foreach (var instance in RegisteredImportersInternal.ToList().Where(instance => instance.GetType().Assembly == assembly))
+                {
+                    RegisteredImportersInternal.Remove(instance);
+                }
+
+                foreach (var typeToRemove in RegisteredFormatVersions.Keys.ToList().Where(type => type.Assembly == assembly))
+                {
+                    RegisteredFormatVersions.Remove(typeToRemove);
+                }
+
+                foreach (var typeToRemove in RegisteredInternalAssetTypes.ToList().Where(type => type.Assembly == assembly))
+                {
+                    RegisteredInternalAssetTypes.Remove(typeToRemove);
+                }
+
+                foreach (var typeToRemove in RegisteredAssetUpgraders.Keys.ToList().Where(type => type.Assembly == assembly))
+                {
+                    RegisteredAssetUpgraders.Remove(typeToRemove);
+                }
+
+                foreach (var extensionToRemove in RegisteredAssetFileExtensions.ToList().Where(keyValue => keyValue.Value.Assembly == assembly).Select(keyValue => keyValue.Key))
+                {
+                    RegisteredAssetFileExtensions.Remove(extensionToRemove);
+                }
+
+                foreach (var upgraderToRemove in RegisteredPackageUpgraders.ToList().Where(keyValue => keyValue.Value.GetType().Assembly == assembly).Select(keyValue => keyValue.Key))
+                {
+                    RegisteredPackageUpgraders.Remove(upgraderToRemove);
+                }
+
+                foreach (var instance in RegisteredSerializerFactories.ToList().Where(instance => instance.GetType().Assembly == assembly))
+                {
+                    RegisteredSerializerFactories.Remove(instance);
+                }
+
+                foreach (var instance in RegisteredDataVisitNodes.ToList().Where(instance => instance.GetType().Assembly == assembly))
+                {
+                    RegisteredDataVisitNodes.Remove(instance);
+                }
+
+                foreach (var instance in RegisteredDataVisitNodeBuilders.ToList().Where(instance => instance.GetType().Assembly == assembly))
+                {
+                    RegisteredDataVisitNodeBuilders.Remove(instance);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Check if the specified type is an asset.
+        /// </summary>
+        /// <param name="assetType">Type of the asset.</param>
+        /// <param name="throwException">A boolean indicating whether this method should throw an exception if the type is not an asset type.</param>
+        /// <returns><c>true</c> if the asset is an asset type, false otherwise.</returns>
         public static bool IsAssetType(Type assetType, bool throwException = false)
         {
             if (assetType == null)
-                throw new ArgumentNullException("assetType");
+                throw new ArgumentNullException(nameof(assetType));
 
             if (!typeof(Asset).IsAssignableFrom(assetType))
             {
                 if (throwException)
-                    throw new ArgumentException("Type [{0}] must be assignable to Asset".ToFormat(assetType), "assetType");
+                    throw new ArgumentException("Type [{0}] must be assignable to Asset".ToFormat(assetType), nameof(assetType));
                 return false;
             }
             return true;
@@ -631,6 +721,15 @@ namespace SiliconStudio.Assets
                 RegisterAssembly(assembly);
             }
             AssemblyRegistry.AssemblyRegistered += AssemblyRegistryAssemblyRegistered;
+            AssemblyRegistry.AssemblyUnregistered += AssemblyRegistryOnAssemblyUnregistered;
+        }
+
+        private static void AssemblyRegistryOnAssemblyUnregistered(object sender, AssemblyRegisteredEventArgs e)
+        {
+            if (e.Categories.Contains(AssemblyCommonCategories.Assets))
+            {
+                UnregisterAssembly(e.Assembly);
+            }
         }
 
         static void AssemblyRegistryAssemblyRegistered(object sender, AssemblyRegisteredEventArgs e)

@@ -28,10 +28,10 @@ namespace SiliconStudio.ExecServer
 
         public event EventHandler<EventArgs> ShuttingDown;
 
-        public ExecServerRemote(string executablePath, bool trackingServer, bool cachingAppDomain, int maxConcurrentAppDomain)
+        public ExecServerRemote(string executablePath, bool trackingServer, bool cachingAppDomain)
         {
             // TODO: List of native dll directory is hardcoded here. Instead, it should be extracted from .exe.config file for example
-            shadowManager = new AppDomainShadowManager(executablePath, new[] { IntPtr.Size == 8 ? "x64" : "x86" }, maxConcurrentAppDomain)
+            shadowManager = new AppDomainShadowManager(executablePath, new[] { IntPtr.Size == 8 ? "x64" : "x86" })
             {
                 IsCachingAppDomain = cachingAppDomain
             };
@@ -53,14 +53,14 @@ namespace SiliconStudio.ExecServer
         {
         }
 
-        public int Run(string[] args)
+        public int Run(string currentDirectory, string[] args)
         {
             Console.WriteLine("Run Received {0}", string.Join(" ", args));
 
             upTime.Restart();
 
             var logger = OperationContext.Current.GetCallbackChannel<IServerLogger>();
-            var result = shadowManager.Run(args, logger);
+            var result = shadowManager.Run(currentDirectory, args, logger);
             return result;
         }
 

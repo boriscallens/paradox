@@ -41,6 +41,7 @@
     <Compile Include="Backend\Requests\AtlasExtractionRequest.cs" />
     <Compile Include="Backend\Requests\AtlasUpdateRequest.cs" />
     <Compile Include="Backend\Requests\ColorKeyRequest.cs" />
+    <Compile Include="Backend\Requests\ConvertingRequest.cs" />
     <Compile Include="Backend\Requests\CubeCreationRequest.cs" />
     <Compile Include="Backend\Requests\FlippingSubRequest.cs" />
     <Compile Include="Backend\Requests\GammaCorrectionRequest.cs" />
@@ -55,6 +56,7 @@
     <Compile Include="Backend\TexLibraries\DxtTexLib.cs" />
     <Compile Include="Backend\TexLibraries\ParadoxTexLibrary.cs" />
     <Compile Include="Backend\TexLibraries\PvrttTexLib.cs" />
+    <Compile Include="Frontend\AlphaLevels.cs" />
     <Compile Include="Frontend\Enumeration\Filter.cs" />
     <Compile Include="Backend\Tools.cs" />
     <Compile Include="Backend\Wrappers\AtitcNetWrapper.cs" />
@@ -151,18 +153,18 @@
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="$(ParadoxDependenciesDir)FreeImage\$(Configuration)\**\*.dll">
+    <Content Include="$(ParadoxDependenciesDir)FreeImage\$(Configuration)\**\*.dll">
       <Link>%(RecursiveDir)%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Include="$(ParadoxDependenciesDir)TextureWrappers\$(Configuration)\**\*.dll">
+    </Content>
+    <Content Include="$(ParadoxDependenciesDir)TextureWrappers\$(Configuration)\**\*.dll">
       <Link>%(RecursiveDir)%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Include="$(ParadoxDependenciesDir)PVRTT\**\*.dll">
+    </Content>
+    <Content Include="$(ParadoxDependenciesDir)PVRTT\**\*.dll">
       <Link>%(RecursiveDir)%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
+    </Content>
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\common\core\SiliconStudio.Core.Mathematics\SiliconStudio.Core.Mathematics.csproj">

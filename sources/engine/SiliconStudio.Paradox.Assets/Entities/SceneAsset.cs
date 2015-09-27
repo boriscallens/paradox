@@ -3,15 +3,19 @@
 
 using System;
 using System.ComponentModel;
+using System.Diagnostics;
 using SharpYaml.Serialization;
 
 using SiliconStudio.Assets;
 using SiliconStudio.Assets.Compiler;
 using SiliconStudio.Core;
 using SiliconStudio.Core.Diagnostics;
+using SiliconStudio.Core.Extensions;
+using SiliconStudio.Core.Mathematics;
 using SiliconStudio.Core.Reflection;
 using SiliconStudio.Core.Yaml;
 using SiliconStudio.Paradox.Engine;
+using SiliconStudio.Paradox.Rendering.Lights;
 
 using IObjectFactory = SiliconStudio.Core.Reflection.IObjectFactory;
 
@@ -24,7 +28,7 @@ namespace SiliconStudio.Paradox.Assets.Entities
     [AssetDescription(FileSceneExtension)]
     [ObjectFactory(typeof(SceneFactory))]
     [ThumbnailCompiler(PreviewerCompilerNames.SceneThumbnailCompilerQualifiedName)]
-    [AssetFormatVersion(8)]
+    [AssetFormatVersion(CurrentVersion)]
     [AssetUpgrader(0, 1, typeof(RemoveSourceUpgrader))]
     [AssetUpgrader(1, 2, typeof(RemoveBaseUpgrader))]
     [AssetUpgrader(2, 3, typeof(RemoveModelDrawOrderUpgrader))]
@@ -33,9 +37,21 @@ namespace SiliconStudio.Paradox.Assets.Entities
     [AssetUpgrader(5, 6, typeof(RemoveModelParametersUpgrader))]
     [AssetUpgrader(6, 7, typeof(RemoveEnabledFromIncompatibleComponent))]
     [AssetUpgrader(7, 8, typeof(SceneIsNotEntityUpgrader))]
+    [AssetUpgrader(8, 9, typeof(ColliderShapeAssetOnlyUpgrader))]
+    [AssetUpgrader(9, 10, typeof(NoBox2DUpgrader))]
+    [AssetUpgrader(10, 11, typeof(RemoveShadowImportanceUpgrader))]
+    [AssetUpgrader(11, 12, typeof(NewElementLayoutUpgrader))]
+    [AssetUpgrader(12, 13, typeof(NewElementLayoutUpgrader2))]
+    [AssetUpgrader(13, 14, typeof(RemoveGammaTransformUpgrader))]
+    [AssetUpgrader(14, 15, typeof(EntityDesignUpgrader))]
+    [AssetUpgrader(15, 16, typeof(NewElementLayoutUpgrader3))]
+    [AssetUpgrader(16, 17, typeof(NewElementLayoutUpgrader4))]
+    [AssetUpgrader(17, 18, typeof(RemoveSceneEditorCameraSettings))]    
     [Display(200, "Scene", "A scene")]
     public class SceneAsset : EntityAsset
     {
+        private const int CurrentVersion = 18;
+
         public const string FileSceneExtension = ".pdxscene";
 
         public static SceneAsset Create()
@@ -53,7 +69,7 @@ namespace SiliconStudio.Paradox.Assets.Entities
 
         class RemoveSourceUpgrader : AssetUpgraderBase
         {
-            protected override void UpgradeAsset(int currentVersion, int targetVersion, ILogger log, dynamic asset)
+            protected override void UpgradeAsset(AssetMigrationContext context, int currentVersion, int targetVersion, dynamic asset, PackageLoadingAssetFile assetFile)
             {
                 if (asset.Source != null)
                     asset.Source = DynamicYamlEmpty.Default;
@@ -64,7 +80,7 @@ namespace SiliconStudio.Paradox.Assets.Entities
 
         class RemoveBaseUpgrader : IAssetUpgrader
         {
-            public void Upgrade(int currentVersion, int targetVersion, ILogger log, YamlMappingNode yamlAssetNode)
+            public void Upgrade(AssetMigrationContext context, int currentVersion, int targetVersion, YamlMappingNode yamlAssetNode, PackageLoadingAssetFile assetFile)
             {
                 dynamic asset = new DynamicYamlMapping(yamlAssetNode);
                 var baseBranch = asset["~Base"];
@@ -84,7 +100,7 @@ namespace SiliconStudio.Paradox.Assets.Entities
 
         class RemoveModelDrawOrderUpgrader : AssetUpgraderBase
         {
-            protected override void UpgradeAsset(int currentVersion, int targetVersion, ILogger log, dynamic asset)
+            protected override void UpgradeAsset(AssetMigrationContext context, int currentVersion, int targetVersion, dynamic asset, PackageLoadingAssetFile assetFile)
             {
                 var hierarchy = asset.Hierarchy;
                 var entities = (DynamicYamlArray)hierarchy.Entities;
@@ -100,7 +116,7 @@ namespace SiliconStudio.Paradox.Assets.Entities
 
         class RenameSpriteProviderUpgrader : AssetUpgraderBase
         {
-            protected override void UpgradeAsset(int currentVersion, int targetVersion, ILogger log, dynamic asset)
+            protected override void UpgradeAsset(AssetMigrationContext context, int currentVersion, int targetVersion, dynamic asset, PackageLoadingAssetFile assetFile)
             {
                 var hierarchy = asset.Hierarchy;
                 var entities = (DynamicYamlArray)hierarchy.Entities;
@@ -125,7 +141,7 @@ namespace SiliconStudio.Paradox.Assets.Entities
 
         class RemoveSpriteExtrusionMethodUpgrader : AssetUpgraderBase
         {
-            protected override void UpgradeAsset(int currentVersion, int targetVersion, ILogger log, dynamic asset)
+            protected override void UpgradeAsset(AssetMigrationContext context, int currentVersion, int targetVersion, dynamic asset, PackageLoadingAssetFile assetFile)
             {
                 var hierarchy = asset.Hierarchy;
                 var entities = (DynamicYamlArray)hierarchy.Entities;
@@ -141,7 +157,7 @@ namespace SiliconStudio.Paradox.Assets.Entities
 
         class RemoveModelParametersUpgrader : AssetUpgraderBase
         {
-            protected override void UpgradeAsset(int currentVersion, int targetVersion, ILogger log, dynamic asset)
+            protected override void UpgradeAsset(AssetMigrationContext context, int currentVersion, int targetVersion, dynamic asset, PackageLoadingAssetFile assetFile)
             {
                 var hierarchy = asset.Hierarchy;
                 var entities = (DynamicYamlArray)hierarchy.Entities;
@@ -157,7 +173,7 @@ namespace SiliconStudio.Paradox.Assets.Entities
 
         class RemoveEnabledFromIncompatibleComponent : AssetUpgraderBase
         {
-            protected override void UpgradeAsset(int currentVersion, int targetVersion, ILogger log, dynamic asset)
+            protected override void UpgradeAsset(AssetMigrationContext context, int currentVersion, int targetVersion, dynamic asset, PackageLoadingAssetFile assetFile)
             {
                 var hierarchy = asset.Hierarchy;
                 var entities = (DynamicYamlArray)hierarchy.Entities;
@@ -184,7 +200,7 @@ namespace SiliconStudio.Paradox.Assets.Entities
 
         class SceneIsNotEntityUpgrader : AssetUpgraderBase
         {
-            protected override void UpgradeAsset(int currentVersion, int targetVersion, ILogger log, dynamic asset)
+            protected override void UpgradeAsset(AssetMigrationContext context, int currentVersion, int targetVersion, dynamic asset, PackageLoadingAssetFile assetFile)
             {
                 // Transform RootEntity in RootEntities
                 var rootEntityFieldIndex = asset.Hierarchy.IndexOf("RootEntity");
@@ -223,6 +239,340 @@ namespace SiliconStudio.Paradox.Assets.Entities
 
                 // Move scene component
                 asset.Hierarchy.SceneSettings = rootEntity.Components["SceneComponent.Key"];
+            }
+        }
+
+        class ColliderShapeAssetOnlyUpgrader : AssetUpgraderBase
+        {
+            protected override void UpgradeAsset(AssetMigrationContext context, int currentVersion, int targetVersion, dynamic asset, PackageLoadingAssetFile assetFile)
+            {
+                var hierarchy = asset.Hierarchy;
+                var entities = (DynamicYamlArray)hierarchy.Entities;
+                foreach (dynamic entity in entities)
+                {
+                    var components = entity.Components;
+                    var physComponent = components["PhysicsComponent.Key"];
+                    if (physComponent != null)
+                    {
+                        foreach (dynamic element in physComponent.Elements)
+                        {
+                            var index = element.IndexOf("Shape");
+                            if (index == -1) continue;
+
+                            dynamic shapeId = element.Shape;
+                            element.ColliderShapes = new DynamicYamlArray(new YamlSequenceNode());
+                            dynamic subnode = new YamlMappingNode { Tag = "!ColliderShapeAssetDesc" };
+                            subnode.Add("Shape", shapeId.Node.Value);
+                            element.ColliderShapes.Add(subnode);
+
+                            element.RemoveChild("Shape");
+                        }
+                    }
+                }
+            }
+        }
+
+        class NoBox2DUpgrader : AssetUpgraderBase
+        {
+            protected override void UpgradeAsset(AssetMigrationContext context, int currentVersion, int targetVersion, dynamic asset, PackageLoadingAssetFile assetFile)
+            {
+                var hierarchy = asset.Hierarchy;
+                var entities = (DynamicYamlArray)hierarchy.Entities;
+                foreach (dynamic entity in entities)
+                {
+                    var components = entity.Components;
+                    var physComponent = components["PhysicsComponent.Key"];
+                    if (physComponent != null)
+                    {
+                        foreach (dynamic element in physComponent.Elements)
+                        {
+                            foreach (dynamic shape in element.ColliderShapes)
+                            {
+                                var tag = shape.Node.Tag;
+                                if (tag == "!Box2DColliderShapeDesc")
+                                {
+                                    shape.Node.Tag = "!BoxColliderShapeDesc";
+                                    shape.Is2D = true;
+                                    shape.Size.X = shape.Size.X;
+                                    shape.Size.Y = shape.Size.Y;
+                                    shape.Size.Z = 0.01f;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        class RemoveShadowImportanceUpgrader : AssetUpgraderBase
+        {
+            protected override void UpgradeAsset(AssetMigrationContext context, int currentVersion, int targetVersion, dynamic asset, PackageLoadingAssetFile assetFile)
+            {
+                var hierarchy = asset.Hierarchy;
+                var entities = (DynamicYamlArray)hierarchy.Entities;
+                foreach (dynamic entity in entities)
+                {
+                    var components = entity.Components;
+                    var lightComponent = components["LightComponent.Key"];
+                    if (lightComponent != null)
+                    {
+                        var lightType = lightComponent.Type;
+                        if (lightType != null)
+                        {
+                            var shadow = lightType.Shadow;
+                            if (shadow != null)
+                            {
+                                var size = (OldLightShadowMapSize)(shadow.Size ?? OldLightShadowMapSize.Small);
+                                var importance = (OldLightShadowImportance)(shadow.Importance ?? OldLightShadowImportance.Low);
+
+                                // Convert back the old size * importance to the new size
+                                var factor = importance == OldLightShadowImportance.High ? 2.0 : importance == OldLightShadowImportance.Medium ? 1.0 : 0.5;
+                                factor *= Math.Pow(2.0, (int)size - 2.0);
+                                var value = ((int)Math.Log(factor, 2.0)) + 3;
+
+                                var newSize = (LightShadowMapSize)Enum.ToObject(typeof(LightShadowMapSize), value);
+                                shadow.Size = newSize;
+
+                                shadow.RemoveChild("Importance");
+                            }
+                        }
+                    }
+                }
+            }
+
+            private enum OldLightShadowMapSize
+            {
+                Small,
+                Medium,
+                Large
+            }
+
+
+            private enum OldLightShadowImportance
+            {
+                Low,
+                Medium,
+                High
+            }
+        }
+
+        class NewElementLayoutUpgrader : AssetUpgraderBase
+        {
+            protected override void UpgradeAsset(AssetMigrationContext context, int currentVersion, int targetVersion, dynamic asset, PackageLoadingAssetFile assetFile)
+            {
+                var hierarchy = asset.Hierarchy;
+                var entities = (DynamicYamlArray)hierarchy.Entities;
+                foreach (dynamic entity in entities)
+                {
+                    var components = entity.Components;
+                    var physComponent = components["PhysicsComponent.Key"];
+                    if (physComponent != null)
+                    {
+                        foreach (dynamic element in physComponent.Elements)
+                        {
+                            var type = element.Type.Node.Value;
+
+                            if (type == "PhantomCollider")
+                            {
+                                element.Node.Tag = "!TriggerElement";
+                                element.RemoveChild("StepHeight");
+                            }
+                            else if (type == "StaticCollider")
+                            {
+                                element.Node.Tag = "!StaticColliderElement";
+                                element.RemoveChild("StepHeight");
+                            }
+                            else if (type == "StaticRigidBody")
+                            {
+                                element.Node.Tag = "!StaticRigidbodyElement";
+                                element.RemoveChild("StepHeight");
+                            }
+                            else if (type == "DynamicRigidBody")
+                            {
+                                element.Node.Tag = "!DynamicRigidbodyElement";
+                                element.RemoveChild("StepHeight");
+                            }
+                            else if (type == "KinematicRigidBody")
+                            {
+                                element.Node.Tag = "!KinematicRigidbodyElement";
+                                element.RemoveChild("StepHeight");
+                            }
+                            else if (type == "CharacterController")
+                            {
+                                element.Node.Tag = "!CharacterElement";
+                            }
+                            
+                            element.RemoveChild("Type");
+                        }
+                    }
+                }
+            }
+        }
+
+        class NewElementLayoutUpgrader2 : AssetUpgraderBase
+        {
+            protected override void UpgradeAsset(AssetMigrationContext context, int currentVersion, int targetVersion, dynamic asset, PackageLoadingAssetFile assetFile)
+            {
+                var hierarchy = asset.Hierarchy;
+                var entities = (DynamicYamlArray)hierarchy.Entities;
+                foreach (dynamic entity in entities)
+                {
+                    var components = entity.Components;
+                    var physComponent = components["PhysicsComponent.Key"];
+                    if (physComponent != null)
+                    {
+                        foreach (dynamic element in physComponent.Elements)
+                        {
+                            if (element.Node.Tag == "!TriggerElement" ||
+                                element.Node.Tag == "!StaticColliderElement" ||
+                                element.Node.Tag == "!StaticRigidbodyElement" ||
+                                element.Node.Tag == "!CharacterElement"
+                                )
+                            {
+                                element.RemoveChild("LinkedBoneName");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        private class RemoveGammaTransformUpgrader : AssetUpgraderBase
+        {
+            protected override void UpgradeAsset(AssetMigrationContext context, int currentVersion, int targetVersion, dynamic asset, PackageLoadingAssetFile assetFile)
+            {
+                var hierarchy = asset.Hierarchy;
+
+                // Remove from all layers/renderers
+                var layers = (DynamicYamlArray)hierarchy?.SceneSettings?.GraphicsCompositor?.Layers;
+                if (layers != null)
+                {
+                    foreach (dynamic layer in layers)
+                    {
+                        ProcessRenderers((DynamicYamlArray)layer.Renderers);
+                    }
+                }
+
+                var masterRenderers = (DynamicYamlArray)hierarchy?.SceneSettings?.GraphicsCompositor?.Master?.Renderers;
+                ProcessRenderers(masterRenderers);
+
+                // Remove from editor settings
+                var colorTransforms = hierarchy?.SceneSettings?.EditorSettings?.Mode?.PostProcessingEffects?.ColorTransforms;
+                if (colorTransforms != null)
+                {
+                    colorTransforms.RemoveChild("GammaTransform");
+
+                    // Because the color was stored in linear, we need to store it back to gamma 
+                    // We also apply a x2 to the color to 
+                    var color = hierarchy.SceneSettings.EditorSettings.Mode.BackgroundColor;
+                    if (color != null)
+                    {
+                        color["R"] = MathUtil.Clamp(MathUtil.LinearToSRgb((float)color["R"]) * 2.0f, 0.0f, 1.0f);
+                        color["G"] = MathUtil.Clamp(MathUtil.LinearToSRgb((float)color["G"]) * 2.0f, 0.0f, 1.0f);
+                        color["B"] = MathUtil.Clamp(MathUtil.LinearToSRgb((float)color["B"]) * 2.0f, 0.0f, 1.0f);
+                    }
+                }
+            }
+
+            void ProcessRenderers(DynamicYamlArray renderers)
+            {
+                foreach (dynamic renderer in renderers)
+                {
+                    var colorTransforms = renderer.Effect?.ColorTransforms;
+                    if (colorTransforms != null)
+                    {
+                        colorTransforms.RemoveChild("GammaTransform");
+                    }
+                }
+            }
+        }
+
+        class EntityDesignUpgrader : AssetUpgraderBase
+        {
+            protected override void UpgradeAsset(AssetMigrationContext context, int currentVersion, int targetVersion, dynamic asset, PackageLoadingAssetFile assetFile)
+            {
+                var entities = asset.Hierarchy.Entities;
+                var designEntities = new YamlSequenceNode();
+                asset.Hierarchy.Entities = designEntities;
+
+                foreach (var entity in entities)
+                {
+                    var designEntity = new YamlMappingNode();
+                    dynamic dynamicDesignEntity = new DynamicYamlMapping(designEntity);
+                    dynamicDesignEntity.Entity = entity;
+                    designEntities.Add(designEntity);
+                }
+            }
+        }
+
+        class NewElementLayoutUpgrader3 : AssetUpgraderBase
+        {
+            protected override void UpgradeAsset(AssetMigrationContext context, int currentVersion, int targetVersion, dynamic asset, PackageLoadingAssetFile assetFile)
+            {
+                var hierarchy = asset.Hierarchy;
+                var entities = (DynamicYamlArray)hierarchy.Entities;
+                foreach (dynamic entity in entities)
+                {
+                    var components = entity.Entity.Components;
+                    var physComponent = components["PhysicsComponent.Key"];
+                    if (physComponent == null) continue;
+
+                    foreach (dynamic element in physComponent.Elements)
+                    {
+                        if (element.Node.Tag == "!TriggerElement")
+                        {
+                            element.RemoveChild("LinkedBoneName");
+                        }
+                        else if (element.Node.Tag == "!KinematicRigidbodyElement")
+                        {
+                            element.Node.Tag = "!RigidbodyElement";
+                            element.IsKinematic = true;
+                        }
+                        else if (element.Node.Tag == "!DynamicRigidbodyElement")
+                        {
+                            element.Node.Tag = "!RigidbodyElement";
+                            element.IsKinematic = false;
+                        }
+                        else if (element.Node.Tag == "!StaticRigidbodyElement")
+                        {
+                            element.Node.Tag = "!StaticColliderElement";
+                        }
+
+                        element.ProcessCollisions = true;
+                    }
+                }
+            }
+        }
+
+        class NewElementLayoutUpgrader4 : AssetUpgraderBase
+        {
+            protected override void UpgradeAsset(AssetMigrationContext context, int currentVersion, int targetVersion, dynamic asset, PackageLoadingAssetFile assetFile)
+            {
+                var hierarchy = asset.Hierarchy;
+                var entities = (DynamicYamlArray)hierarchy.Entities;
+                foreach (dynamic entity in entities)
+                {
+                    var components = entity.Entity.Components;
+                    var physComponent = components["PhysicsComponent.Key"];
+                    if (physComponent == null) continue;
+
+                    foreach (dynamic element in physComponent.Elements)
+                    {
+                        if (element.Node.Tag == "!RigidbodyElement")
+                        {
+                            element.NodeName = element.LinkedBoneName;
+                            element.RemoveChild("LinkedBoneName");
+                        }
+                    }
+                }
+            }
+        }
+
+        class RemoveSceneEditorCameraSettings : AssetUpgraderBase
+        {
+            protected override void UpgradeAsset(AssetMigrationContext context, int currentVersion, int targetVersion, dynamic asset, PackageLoadingAssetFile assetFile)
+            {
+                asset.Hierarchy.SceneSettings.EditorSettings.Camera = DynamicYamlEmpty.Default;
             }
         }
 

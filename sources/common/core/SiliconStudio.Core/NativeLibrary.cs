@@ -70,7 +70,7 @@ namespace SiliconStudio.Core
                     cpu = IntPtr.Size == 8 ? "x64" : "x86";
 
                 // We are trying to load the dll from a shadow path if it is already registered, otherwise we use it directly from the folder
-                var dllFolder = NativeLibraryInternal.GetShadowPathForNativeDll(libraryName) ?? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, cpu);
+                var dllFolder = NativeLibraryInternal.GetShadowPathForNativeDll(libraryName) ?? Path.Combine(Path.GetDirectoryName(typeof(NativeLibrary).Assembly.Location), cpu);
                 var libraryFilename = Path.Combine(dllFolder, libraryName);
                 var result = LoadLibrary(libraryFilename);
 
@@ -92,6 +92,7 @@ namespace SiliconStudio.Core
         /// <param name="libraryName">Name of the library to unload.</param>
         public static void UnLoad(string libraryName)
         {
+#if SILICONSTUDIO_PLATFORM_WINDOWS_DESKTOP
             lock (LoadedLibraries)
             {
                 var libName = libraryName.ToLowerInvariant();
@@ -103,6 +104,7 @@ namespace SiliconStudio.Core
                     LoadedLibraries.Remove(libName);
                 }
             }
+#endif
         }
 
         /// <summary>
@@ -110,6 +112,7 @@ namespace SiliconStudio.Core
         /// </summary>
         public static void UnLoadAll()
         {
+#if SILICONSTUDIO_PLATFORM_WINDOWS_DESKTOP
             lock (LoadedLibraries)
             {
                 foreach (var libraryItem in LoadedLibraries)
@@ -118,6 +121,7 @@ namespace SiliconStudio.Core
                 }
                 LoadedLibraries.Clear();
             }
+#endif
         }
 
 #if SILICONSTUDIO_PLATFORM_WINDOWS_RUNTIME

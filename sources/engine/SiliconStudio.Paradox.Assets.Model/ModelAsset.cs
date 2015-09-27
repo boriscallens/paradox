@@ -9,6 +9,7 @@ using SiliconStudio.Assets;
 using SiliconStudio.Assets.Compiler;
 using SiliconStudio.Assets.Diff;
 using SiliconStudio.Core;
+using SiliconStudio.Core.Annotations;
 using SiliconStudio.Core.Diagnostics;
 using SiliconStudio.Core.Yaml;
 using SiliconStudio.Paradox.Rendering;
@@ -56,6 +57,7 @@ namespace SiliconStudio.Paradox.Assets.Model
         /// The list of materials in the model.
         /// </userdoc>
         [DataMember(40)]
+        [MemberCollection(ReadOnly = true)]
         public List<ModelMaterial> Materials { get; private set; }
 
         /// <summary>
@@ -157,7 +159,7 @@ namespace SiliconStudio.Paradox.Assets.Model
 
         class Upgrader : AssetUpgraderBase
         {
-            protected override void UpgradeAsset(int currentVersion, int targetVersion, ILogger log, dynamic asset)
+            protected override void UpgradeAsset(AssetMigrationContext context, int currentVersion, int targetVersion, dynamic asset, PackageLoadingAssetFile assetFile)
             {
                 foreach (var modelMaterial in asset.Materials)
                 {
